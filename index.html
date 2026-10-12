@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Full Migration Flow — JDK 1.4+Interstage → JDK 21+Spring Boot 3</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface-2: #334155;
+    --accent: #38bdf8;
+    --accent-2: #a78bfa;
+    --accent-3: #f472b6;
+    --success: #22c55e;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --border: #475569;
+    --code-bg: #0b1220;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, 'Segoe UI', 'Yu Gothic UI', Roboto, sans-serif;
+    line-height: 1.6;
+    padding: 2rem;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 2.2rem;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--accent-3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 0.3rem;
+  }
+  .subtitle { color: var(--text-dim); margin-bottom: 1.5rem; font-size: 1.05rem; }
+  h2 {
+    color: var(--accent);
+    border-bottom: 2px solid var(--surface-2);
+    padding-bottom: 0.4rem;
+    margin: 2.5rem 0 1rem;
+    font-size: 1.5rem;
+  }
+  h3 { color: var(--accent-2); margin: 1.3rem 0 0.7rem; font-size: 1.2rem; }
+  h4 { color: var(--accent-3); margin: 1rem 0 0.5rem; font-size: 1rem; }
+  p { margin: 0.6rem 0; }
+  strong { color: #fbbf24; }
+  code {
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Consolas', 'Cascadia Mono', monospace;
+    font-size: 0.9em;
+    color: #93c5fd;
+  }
+  pre {
+    background: var(--code-bg);
+    padding: 1rem 1.2rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    border-left: 3px solid var(--accent);
+    margin: 0.8rem 0;
+    font-size: 0.88rem;
+  }
+  pre code { background: none; padding: 0; color: #e2e8f0; }
+
+  .phase {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .phase::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 4px;
+    background: linear-gradient(180deg, var(--accent), var(--accent-2));
+  }
+  .phase.discovery::before { background: linear-gradient(180deg, #60a5fa, #a78bfa); }
+  .phase.analysis::before { background: linear-gradient(180deg, #22c55e, #10b981); }
+  .phase.architecture::before { background: linear-gradient(180deg, #f472b6, #ec4899); }
+  .phase.detail::before { background: linear-gradient(180deg, #f59e0b, #d97706); }
+  .phase.build::before { background: linear-gradient(180deg, #ef4444, #dc2626); }
+
+  .phase-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .phase-num {
+    font-size: 2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    min-width: 50px;
+  }
+  .phase-title {
+    font-size: 1.35rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .phase-sub { color: var(--text-dim); font-size: 0.9rem; margin-top: 0.1rem; }
+
+  .substep {
+    background: var(--surface-2);
+    padding: 1rem 1.2rem;
+    border-radius: 8px;
+    margin: 0.8rem 0;
+    border-left: 3px solid var(--accent);
+  }
+  .substep.manual { border-left-color: var(--warn); }
+  .substep.auto { border-left-color: var(--success); }
+  .substep h4 { margin-top: 0; }
+  .substep-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .substep-id { font-weight: 600; color: var(--accent-2); font-size: 0.9rem; }
+
+  .io-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 0.8rem 0;
+  }
+  @media (max-width: 720px) { .io-grid { grid-template-columns: 1fr; } }
+  .io-box {
+    background: rgba(0,0,0,0.2);
+    padding: 0.8rem;
+    border-radius: 6px;
+  }
+  .io-box.input { border-left: 2px solid #60a5fa; }
+  .io-box.output { border-left: 2px solid var(--success); }
+  .io-box h5 {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 0.4rem;
+  }
+  .io-box ul { padding-left: 1.1rem; }
+  .io-box li { margin: 0.15rem 0; font-size: 0.88rem; }
+
+  .next-value {
+    background: rgba(34, 197, 94, 0.08);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    border-radius: 6px;
+    padding: 0.8rem 1rem;
+    margin-top: 0.8rem;
+    font-size: 0.92rem;
+  }
+  .next-value::before {
+    content: '🎯 Dùng cho bước sau: ';
+    color: var(--success);
+    font-weight: 600;
+  }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-right: 0.4rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tag-auto { background: #065f46; color: #a7f3d0; }
+  .tag-manual { background: #78350f; color: #fde68a; }
+  .tag-skill { background: #312e81; color: #c7d2fe; }
+  .tag-optional { background: #475569; color: #e2e8f0; }
+  .tag-core { background: #9f1239; color: #fecaca; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    background: var(--surface);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 0.6rem 0.9rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88rem;
+    vertical-align: top;
+  }
+  th {
+    background: var(--surface-2);
+    color: var(--accent);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(56, 189, 248, 0.05); }
+
+  .mermaid-wrap {
+    background: #fff;
+    padding: 1.2rem;
+    border-radius: 12px;
+    margin: 1.2rem 0;
+    overflow-x: auto;
+  }
+
+  .toc {
+    background: var(--surface);
+    border-radius: 10px;
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 2rem;
+    border: 1px solid var(--border);
+    column-count: 2;
+    column-gap: 2rem;
+  }
+  @media (max-width: 720px) { .toc { column-count: 1; } }
+  .toc h3 { margin-top: 0; color: var(--accent); column-span: all; }
+  .toc ol { padding-left: 1.4rem; margin-top: 0.5rem; }
+  .toc li { margin: 0.3rem 0; break-inside: avoid; }
+  .toc a { color: var(--text); text-decoration: none; }
+  .toc a:hover { color: var(--accent); text-decoration: underline; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.8rem 0 1.5rem;
+    font-size: 0.85rem;
+  }
+  .legend-item {
+    background: var(--surface);
+    padding: 0.3rem 0.8rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+  }
+
+  .arrow-flow {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 1.5rem;
+    margin: 0.4rem 0;
+  }
+
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 0.8rem;
+    align-items: center;
+    margin: 0.8rem 0;
+  }
+  .comparison-arrow { font-size: 1.5rem; color: var(--accent); text-align: center; }
+  .asis-box {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    padding: 0.8rem;
+    border-radius: 6px;
+  }
+  .tobe-box {
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    padding: 0.8rem;
+    border-radius: 6px;
+  }
+  .asis-box h5, .tobe-box h5 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.4rem; }
+  .asis-box h5 { color: #fca5a5; }
+  .tobe-box h5 { color: #86efac; }
+
+  .highlight-section {
+    background: linear-gradient(135deg, rgba(167, 139, 250, 0.1), rgba(236, 72, 153, 0.05));
+    border: 1px solid var(--accent-2);
+    border-radius: 10px;
+    padding: 1.2rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+  .highlight-section h3 { margin-top: 0; color: var(--accent-3); }
+
+  .footer {
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--surface-2);
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  .big-callout {
+    background: linear-gradient(135deg, #312e81, #4c1d95);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+    color: #e9d5ff;
+    font-size: 1rem;
+    line-height: 1.7;
+    border: 1px solid var(--accent-2);
+  }
+  .big-callout strong { color: #fbbf24; }
+</style>
+</head>
+<body>
+
+<h1>Full Migration Flow — SEEDS</h1>
+<p class="subtitle">
+  JDK 1.4 + Interstage (session/XA/固有API) → JDK 21 + Spring Boot 3 (JWT/@Transactional/JPA) · AWS Multi-AZ
+</p>
+
+<div class="big-callout">
+  📘 <strong>Flow này KHÔNG chỉ là "sửa cú pháp"</strong>. Chuyển framework = thiết kế lại class structure, package layout, DI, common layer, cross-cutting concerns.
+  <br/><br/>
+  Chia làm <strong>5 phase lớn</strong>:
+  <strong>Discovery</strong> (hiểu hiện trạng — gồm nghiệp vụ) →
+  <strong>Analysis</strong> (nhận dạng gap cú pháp + nghiệp vụ) →
+  <strong>Architecture Design</strong> (thiết kế hệ thống mới) →
+  <strong>Detail Design</strong> (per-module design) →
+  <strong>Build &amp; Test</strong>.
+  <br/><br/>
+  Phase 3 (Architecture) là <strong>CORE của full framework migration</strong>, không có trong flow "pure syntactic upgrade".
+</div>
+
+<div class="legend">
+  <span class="legend-item"><span class="tag tag-auto">AUTO</span>skill tự động</span>
+  <span class="legend-item"><span class="tag tag-manual">MANUAL</span>người làm</span>
+  <span class="legend-item"><span class="tag tag-skill">SKILL</span>có tool</span>
+  <span class="legend-item"><span class="tag tag-core">CORE</span>bước quan trọng nhất</span>
+  <span class="legend-item"><span class="tag tag-optional">OPTIONAL</span>có thể skip</span>
+</div>
+
+<div class="toc">
+  <h3>📋 Mục lục</h3>
+  <ol>
+    <li><a href="#overview">🗺️ Big picture</a></li>
+    <li><a href="#p1">Phase 1 — Discovery (hiểu hiện trạng)</a></li>
+    <li><a href="#p2">Phase 2 — Analysis (nhận dạng gap)</a></li>
+    <li><a href="#p3">Phase 3 — Architecture Design 🔥 (CORE)</a></li>
+    <li><a href="#p3-common">Phase 3.5 — Common/Shared Strategy</a></li>
+    <li><a href="#p4">Phase 4 — Detail Design (per-module)</a></li>
+    <li><a href="#p5">Phase 5 — Build & Test</a></li>
+    <li><a href="#asis-tobe">As-Is ↔ To-Be mapping ví dụ</a></li>
+    <li><a href="#summary">Bảng tóm tắt</a></li>
+    <li><a href="#paths">Reference paths</a></li>
+  </ol>
+</div>
+
+<!-- ============== BIG PICTURE ============== -->
+<h2 id="overview">🗺️ Bức tranh tổng thể</h2>
+
+<div class="mermaid-wrap">
+<pre class="mermaid">
+flowchart TD
+    SRC[📁 As-Is Source<br/>JDK 1.4 + Interstage]:::src
+    HUMAN[👤 Domain Expert<br/>SE / PM / 業務担当]:::src
+
+    subgraph P1 [Phase 1: Discovery - Hiểu hiện trạng]
+        P1A[1.1 Inventory<br/>INV-01]
+        P1B[1.2 Business Function Map<br/>SAMPLE-07 A2]
+        P1C[1.3 Business Flow<br/>SAMPLE-07 A3]
+        P1D[1.4 Dependency Map<br/>SAMPLE-06 A3]
+        P1E[1.5 Release Notes<br/>TPL-22]
+    end
+
+    subgraph P2 [Phase 2: Analysis - Nhận dạng gap]
+        P2A[2.1 Non-compat Viewpoints<br/>TPL-23 / TPL-23F]
+        P2B[2.2 Semantic Analysis<br/>Class responsibility<br/>Business rules]
+        P2C[2.3 GAP List<br/>APP-GAP / APP-FW-GAP]
+    end
+
+    subgraph P3 [Phase 3: Architecture Design 🔥]
+        P3A[3.1 Target Architecture<br/>Layering blueprint]
+        P3B[3.2 Package Structure<br/>Feature-based]
+        P3C[3.3 Common/Shared Design<br/>Where common lives]
+        P3D[3.4 Cross-cutting Concerns<br/>Security/Log/Error]
+        P3E[3.5 Data Model<br/>JPA Entity + Repository]
+    end
+
+    subgraph P4 [Phase 4: Detail Design]
+        P4A[4.1 Per-GAP Detail<br/>GAP_APP-xxx.xlsx]
+        P4B[4.2 Per-Module Design<br/>設計書]
+        P4C[4.3 Business Rules Doc<br/>Preservation strategy]
+    end
+
+    P5[Phase 5: Build/PoC/Test]:::build
+
+    SRC --> P1
+    HUMAN --> P1
+    P1 --> P2
+    P2 --> P3
+    P3 --> P4
+    P4 --> P5
+
+    classDef src fill:#1e40af,stroke:#60a5fa,color:#fff
+    classDef build fill:#9f1239,stroke:#ef4444,color:#fff,stroke-width:2px
+    style P1 fill:#1e3a8a,stroke:#60a5fa,color:#fff
+    style P2 fill:#064e3b,stroke:#10b981,color:#fff
+    style P3 fill:#581c87,stroke:#a78bfa,color:#fff,stroke-width:3px
+    style P4 fill:#78350f,stroke:#f59e0b,color:#fff
+</pre>
+</div>
+
+<!-- ============== PHASE 1: DISCOVERY ============== -->
+<h2 id="p1">Phase 1 — Discovery (Hiểu hiện trạng)</h2>
+
+<div class="phase discovery">
+  <div class="phase-header">
+    <div class="phase-num">1</div>
+    <div>
+      <div class="phase-title">Thu thập fact về hệ thống As-Is</div>
+      <div class="phase-sub">
+        Hiểu <strong>code (cú pháp)</strong> + <strong>nghiệp vụ (ý nghĩa)</strong> + <strong>cấu trúc (dependency)</strong> trước khi nói về migration
+      </div>
+    </div>
+  </div>
+
+  <!-- 1.1 -->
+  <div class="substep auto">
+    <div class="substep-header">
+      <span class="substep-id">1.1 — Inventory 棚卸</span>
+      <span><span class="tag tag-auto">AUTO</span><span class="tag tag-skill">create-java-proc-inventory</span></span>
+    </div>
+    <p>Scan source → <strong>bao nhiêu file Java/ProC, bao nhiêu LOC, class nào có risk cao</strong> (ex: dùng raw type, finalize(), interstage API).</p>
+    <div class="io-grid">
+      <div class="io-box input"><h5>📥 In</h5><ul><li>Source folder</li></ul></div>
+      <div class="io-box output"><h5>📤 Out</h5><ul><li><code>INV-01_資産棚卸表.xlsx</code></li><li>1 row/file × 14 risk pattern counts</li></ul></div>
+    </div>
+  </div>
+
+  <!-- 1.2 -->
+  <div class="substep manual">
+    <div class="substep-header">
+      <span class="substep-id">1.2 — Business Function Map 業務機能一覧</span>
+      <span><span class="tag tag-manual">MANUAL</span><span class="tag tag-core">CORE</span></span>
+    </div>
+    <p><strong>Bridge nghiệp vụ ↔ kỹ thuật</strong>. Map mỗi business function (vd "契約申込登録 F-001") → screen ID → class → job → table. Priority rank = 業務重要度 (S/A/B/C) × 技術リスク.</p>
+    <div class="io-grid">
+      <div class="io-box input">
+        <h5>📥 In</h5>
+        <ul>
+          <li>Current system docs + user manual</li>
+          <li>Interview SE/業務担当</li>
+          <li>Source navigation (controller → service → DAO)</li>
+        </ul>
+      </div>
+      <div class="io-box output">
+        <h5>📤 Out</h5>
+        <ul>
+          <li><code>SAMPLE-07 A2 業務機能一覧</code></li>
+          <li>F-001..F-xxx × {機能名, 画面ID, 主なクラス, 関連ジョブ, 業務重要度, 技術リスク}</li>
+          <li><strong>リスク優先度</strong> (最優先/優先/通常)</li>
+        </ul>
+      </div>
+    </div>
+    <div class="next-value">PoC chọn feature "最優先" làm trước. GAP skill (Phase 2.3) rank Impact=S cho GAP touching S-business function.</div>
+  </div>
+
+  <!-- 1.3 -->
+  <div class="substep manual">
+    <div class="substep-header">
+      <span class="substep-id">1.3 — Business Flow 業務フロー</span>
+      <span><span class="tag tag-manual">MANUAL</span></span>
+    </div>
+    <p>Reverse-engineer workflow steps từ source + UI. Mỗi flow (BF-xx) = sequence 5-10 steps (user action → system response).</p>
+    <div class="io-grid">
+      <div class="io-box input"><h5>📥 In</h5><ul><li>Screen walkthrough</li><li>Controller code reading</li></ul></div>
+      <div class="io-box output"><h5>📤 Out</h5><ul><li><code>SAMPLE-07 A3</code>: BF-01..BF-xx × step × actor × data</li><li>Swim-lane diagram cho mỗi flow</li></ul></div>
+    </div>
+    <div class="next-value">Integration test scenarios + UAT acceptance criteria.</div>
+  </div>
+
+  <!-- 1.4 -->
+  <div class="substep">
+    <div class="substep-header">
+      <span class="substep-id">1.4 — Dependency Map 依存関係</span>
+      <span><span class="tag tag-auto">AUTO</span><span class="tag tag-manual">+ review</span></span>
+    </div>
+    <p>Auto-extract bằng <code>jdeps</code>, <code>jQAssistant</code>, hoặc SonarQube → fill vào <code>SAMPLE-06 A3</code>. Review phần A4 <strong>共通処理・重複候補</strong> bằng PMD-CPD / SonarQube clone detector.</p>
+    <div class="io-grid">
+      <div class="io-box input">
+        <h5>📥 In</h5>
+        <ul>
+          <li>Compiled classes (.jar) hoặc source</li>
+          <li>Static analysis tool</li>
+        </ul>
+      </div>
+      <div class="io-box output">
+        <h5>📤 Out</h5>
+        <ul>
+          <li><code>SAMPLE-06 A3 依存関係一覧</code></li>
+          <li><code>SAMPLE-06 A4 共通処理・重複候補</code> (DP-01..DP-xx)</li>
+        </ul>
+      </div>
+    </div>
+    <pre><code># Chạy jdeps để extract class dependencies
+jdeps -verbose:class -R classes/*.jar > deps.txt
+
+# PMD-CPD cho duplicate code detection
+pmd cpd --minimum-tokens 100 --files src/ --format csv > duplicates.csv</code></pre>
+    <div class="next-value">A3 → architecture design (Phase 3.2 package structure). A4 → common module design (Phase 3.3).</div>
+  </div>
+
+  <!-- 1.5 -->
+  <div class="substep auto">
+    <div class="substep-header">
+      <span class="substep-id">1.5 — Release Notes TPL-22</span>
+      <span><span class="tag tag-auto">AUTO</span><span class="tag tag-skill">create-java-release-notes-check</span></span>
+    </div>
+    <p>Fetch all breaking changes JDK (JEP + Oracle deprecated) từ 1.4 → 21. Exhaustive list để không miss.</p>
+    <div class="io-grid">
+      <div class="io-box input"><h5>📥 In</h5><ul><li>Source/target JDK version</li></ul></div>
+      <div class="io-box output"><h5>📤 Out</h5><ul><li><code>TPL-22_リリースノート確認表.xlsx</code></li><li>150-300 RN-xxx items</li></ul></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============== PHASE 2: ANALYSIS ============== -->
+<h2 id="p2">Phase 2 — Analysis (Nhận dạng gap)</h2>
+
+<div class="phase analysis">
+  <div class="phase-header">
+    <div class="phase-num">2</div>
+    <div>
+      <div class="phase-title">Gap gồm 2 chiều: cú pháp (API breaks) + nghiệp vụ/cấu trúc (semantic)</div>
+      <div class="phase-sub">Flow pattern-matching (TPL-23/F) chỉ cover <strong>cú pháp</strong>. Nghiệp vụ cần semantic analysis separate.</div>
+    </div>
+  </div>
+
+  <!-- 2.1 -->
+  <div class="substep auto">
+    <div class="substep-header">
+      <span class="substep-id">2.1 — Non-compat Viewpoints (pattern-based)</span>
+      <span><span class="tag tag-auto">AUTO</span><span class="tag tag-skill">create-jdk-nonc-viewpoints + create-framework-viewpoints</span></span>
+    </div>
+    <p>Convert mỗi RN → regex pattern → scan source → <strong>file:line hits</strong>. Chỉ bắt được "cú pháp API khác" — <em>không</em> bắt được "logic nghiệp vụ khác".</p>
+    <div class="io-grid">
+      <div class="io-box input"><h5>📥 In</h5><ul><li>TPL-22 + source folder</li><li>Pattern catalog (47 JDK + 36 framework patterns bundled)</li></ul></div>
+      <div class="io-box output"><h5>📤 Out</h5><ul><li><code>TPL-23</code> + <code>TPL-23F</code></li><li>A3: INC-xxx viewpoints</li><li>A4: file:line hits</li></ul></div>
+    </div>
+  </div>
+
+  <!-- 2.2 CORE: SEMANTIC ANALYSIS -->
+  <div class="substep manual">
+    <div class="substep-header">
+      <span class="substep-id">2.2 — Semantic Analysis 意味解析</span>
+      <span><span class="tag tag-manual">MANUAL</span><span class="tag tag-core">CORE</span></span>
+    </div>
+    <p><strong>Phần CHÌA KHÓA của framework migration</strong> — không có skill tự động được, cần người đọc code + hiểu nghiệp vụ.</p>
+    <h4>Nội dung cần capture per class:</h4>
+    <table>
+      <thead>
+        <tr><th>Analysis dimension</th><th>Nội dung</th><th>Ví dụ cho SEEDS</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Class responsibility</strong></td>
+          <td>Class này làm gì về nghiệp vụ (1 câu)</td>
+          <td><code>ApplyAction</code>: "Nhận申込 từ 営業店, validate, lưu vào申込 table, trigger host-connect"</td>
+        </tr>
+        <tr>
+          <td><strong>Method semantics</strong></td>
+          <td>Mỗi public method làm gì về nghiệp vụ (not just API signature)</td>
+          <td><code>ApplyAction.execute()</code>: orchestrate 3 steps = validate → persist → notify-host</td>
+        </tr>
+        <tr>
+          <td><strong>Business rules embedded</strong></td>
+          <td>Logic nghiệp vụ hard-code trong class (if/switch)</td>
+          <td><code>if (contractType==1 &amp;&amp; age&gt;=65) premium*=1.5</code> — rule 高齢割増</td>
+        </tr>
+        <tr>
+          <td><strong>Side effects</strong></td>
+          <td>Gọi system khác, write file, send email, update DB</td>
+          <td><code>HostConnector.send()</code>, <code>FtpUpload.put()</code>, <code>SessionBean.set()</code></td>
+        </tr>
+        <tr>
+          <td><strong>Cross-cutting concerns</strong></td>
+          <td>Logging, security check, transaction boundary, error handling</td>
+          <td><code>SecurityUtil.checkRole()</code> + <code>LogUtil.auditLog()</code> + <code>UserTransaction.begin()</code></td>
+        </tr>
+        <tr>
+          <td><strong>Layering (unofficial)</strong></td>
+          <td>Class này đóng vai gì (Controller/Service/DAO/Entity/Util)?</td>
+          <td><code>ApplyAction</code> = pseudo-controller (Interstage servlet); <code>ApplyDao</code> = data access</td>
+        </tr>
+      </tbody>
+    </table>
+    <h4>Cách làm:</h4>
+    <ol style="padding-left:1.5rem; margin:0.5rem 0;">
+      <li><strong>Pick critical class</strong> (từ 1.2 priority ranking): bắt đầu từ 最優先 S business functions, ~20-30 classes</li>
+      <li><strong>AI-assisted read</strong>: dùng Claude đọc source → draft responsibility statement + rules extraction</li>
+      <li><strong>SE verify</strong>: domain expert validate AI output, fix mistakes</li>
+      <li><strong>Document ra template</strong>: vd row-per-class trong <code>SAMPLE-02 A4 調査結果</code> hoặc Confluence</li>
+    </ol>
+    <div class="next-value">
+      Phase 3 Architecture biết cần design class To-Be <strong>theo semantic</strong>, không phải chỉ "rename ApplyAction → ApplyController". Business rules được extract thành <strong>spec</strong> cho Phase 5 testing (preserve behavior).
+    </div>
+  </div>
+
+  <!-- 2.3 -->
+  <div class="substep auto">
+    <div class="substep-header">
+      <span class="substep-id">2.3 — GAP List</span>
+      <span><span class="tag tag-auto">AUTO</span><span class="tag tag-skill">create-jdk-gap-analysis + create-framework-gap-analysis</span></span>
+    </div>
+    <p>Aggregate INC từ TPL-23/F → GAP có organize. Impact rank từ weight. Enhanced: merge với 1.2 priority → nếu GAP touching S-business function → force Impact=S.</p>
+    <div class="io-grid">
+      <div class="io-box input"><h5>📥 In</h5><ul><li>TPL-23 + TPL-23F</li><li>SAMPLE-07 A2 (optional, cho business priority merge)</li></ul></div>
+      <div class="io-box output"><h5>📤 Out</h5><ul><li><code>APP-GAP一覧.xlsx</code> + <code>APP-FW-GAP一覧.xlsx</code></li><li>40-60 GAP entries</li></ul></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============== PHASE 3: ARCHITECTURE 🔥 CORE ============== -->
+<h2 id="p3">Phase 3 — Architecture Design 🔥</h2>
+
+<div class="phase architecture">
+  <div class="phase-header">
+    <div class="phase-num">3</div>
+    <div>
+      <div class="phase-title">Thiết kế hệ thống mới (Spring Boot 3) — không phải "fix API"</div>
+      <div class="phase-sub">
+        <span class="tag tag-core">CORE PHASE</span>
+        <span class="tag tag-manual">MANUAL + AI-assisted</span>
+        Blueprint ra trước, detail sau. Decide package/common BEFORE touching code.
+      </div>
+    </div>
+  </div>
+
+  <p>Đây là <strong>bước PHÂN BIỆT syntactic upgrade vs full framework migration</strong>. Nếu skip phase này → code mới sẽ chỉ là "old code with Spring annotations slapped on" → không tận dụng được Spring Boot, bug tiềm ẩn, maintenance khó.</p>
+
+  <!-- 3.1 Target architecture -->
+  <div class="substep manual">
+    <div class="substep-header">
+      <span class="substep-id">3.1 — Target Architecture Blueprint</span>
+      <span><span class="tag tag-manual">MANUAL</span><span class="tag tag-core">CORE</span></span>
+    </div>
+    <p>Vẽ layering diagram cho hệ thống To-Be. Chuẩn Spring Boot 3 recommended:</p>
+    <pre><code>┌─────────────────────────────────────────────┐
+│  🌐 Entry Point Layer (REST + Legacy IF)   │  @RestController, @GetMapping
+│   - REST Controllers                        │  (replace Interstage servlets)
+│   - Claret IF Adapter (if preserved)        │
+├─────────────────────────────────────────────┤
+│  📋 Application Service Layer               │  @Service, orchestration
+│   - Use case handlers                       │  (business operations)
+│   - Transaction boundary                    │  @Transactional
+├─────────────────────────────────────────────┤
+│  💎 Domain Layer                            │  POJO + Record (JDK 21)
+│   - Entity (JPA @Entity)                    │
+│   - Domain service (pure business logic)   │
+│   - Value objects                           │
+├─────────────────────────────────────────────┤
+│  💾 Infrastructure Layer                    │  @Repository, external integration
+│   - Repository (Spring Data JPA)            │
+│   - External adapters (REST client, FTP)   │
+│   - Message publishers (SQS/Kafka)         │
+└─────────────────────────────────────────────┘
+
+Cross-cutting (via Spring AOP + filter):
+  • Security (Spring Security + JWT)
+  • Logging (SLF4J + Logback + aspect for audit)
+  • Exception handling (@ControllerAdvice)
+  • Monitoring (Micrometer + CloudWatch)</code></pre>
+  </div>
+
+  <!-- 3.2 Package structure -->
+  <div class="substep manual">
+    <div class="substep-header">
+      <span class="substep-id">3.2 — Package Structure</span>
+      <span><span class="tag tag-manual">MANUAL</span><span class="tag tag-core">CORE</span></span>
+    </div>
+    <p>Quyết định <strong>feature-based</strong> (grouping theo業務) vs <strong>layer-based</strong> (grouping theo tech layer). Recommended: <strong>hybrid feature-first</strong>:</p>
+    <pre><code>com.seeds.insurance/
+├── contract/              ← Feature: 契約 (từ SAMPLE-07 大分類)
+│   ├── application/       ← Controller + use case
+│   │   ├── ContractController.java         (từ ApplyAction)
+│   │   └── ContractApplicationService.java (orchestration)
+│   ├── domain/            ← Business entity + rule
+│   │   ├── Contract.java        (@Entity)
+│   │   ├── ContractType.java    (enum)
+│   │   └── PremiumCalculator.java (domain service)
+│   ├── infrastructure/
+│   │   └── ContractRepository.java         (Spring Data)
+│   └── dto/
+│       ├── ContractRequest.java            (@Valid)
+│       └── ContractResponse.java
+├── payment/              ← Feature: 収納 (入金/請求)
+│   └── ...
+├── claim/                ← Feature: 支払 (保険金)
+│   └── ...
+├── agent/                ← Feature: 代理店
+│   └── ...
+│
+├── common/               ← ⭐ Cross-feature shared (xem 3.3)
+│   ├── exception/
+│   ├── security/
+│   ├── logging/
+│   ├── validation/
+│   ├── config/
+│   └── util/
+│
+└── infrastructure/       ← External integration shared
+    ├── claret/            (legacy Claret IF adapter)
+    ├── ftp/               (FTP S3 replacement)
+    ├── messaging/         (SQS/Kafka)
+    └── notification/</code></pre>
+    <p><strong>Decision rules cho package placement</strong>:</p>
+    <ul style="padding-left:1.5rem; margin:0.5rem 0;">
+      <li>Code dùng bởi <strong>1 feature only</strong> → đặt trong <code>feature/</code></li>
+      <li>Code dùng bởi <strong>2+ features</strong> + <strong>không có business logic</strong> → <code>common/</code></li>
+      <li>Code integrate với system khác (DB/MQ/FTP) → <code>infrastructure/</code></li>
+      <li>Business logic xuyên feature → tạo thành <strong>domain service</strong> trong feature chính (vd 保険料計算 → <code>contract/domain/PremiumCalculator</code>, không phải common)</li>
+    </ul>
+  </div>
+
+  <!-- 3.3 Common/Shared design -->
+  <div class="substep manual" style="border-left-color: #ec4899;">
+    <div class="substep-header">
+      <span class="substep-id">3.3 — Common/Shared Design 共通層設計</span>
+      <span><span class="tag tag-manual">MANUAL</span><span class="tag tag-core">CORE</span></span>
+    </div>
+    <p><strong>Nguyên tắc #1</strong>: Prefer <strong>Spring Boot standard</strong>, chỉ build custom common cho <strong>business-specific</strong> cross-cutting.</p>
+
+    <h4>Bảng quyết định common/shared cho SEEDS:</h4>
+    <table>
+      <thead>
+        <tr><th>Concern</th><th>Spring Boot standard</th><th>Custom common cần?</th><th>Package</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Logging format</td><td>SLF4J + Logback</td><td>⚠️ Custom cho audit log (ai làm gì khi nào)</td><td><code>common/logging/</code></td></tr>
+        <tr><td>Exception handling</td><td>@ControllerAdvice</td><td>✅ BusinessException hierarchy + error code → message mapping (vn/ja)</td><td><code>common/exception/</code></td></tr>
+        <tr><td>Validation</td><td>Jakarta @Valid</td><td>⚠️ Custom validators (vd @KanaOnly, @ZenkakuNumber, @MyNumber)</td><td><code>common/validation/</code></td></tr>
+        <tr><td>Security</td><td>Spring Security + JWT</td><td>⚠️ Custom <code>UserContext</code> (replace Interstage session attrs)</td><td><code>common/security/</code></td></tr>
+        <tr><td>Date/time</td><td>java.time (JDK 8+)</td><td>✅ Custom <code>JapaneseEraConverter</code> (元号), <code>FiscalYearCalculator</code> (年度)</td><td><code>common/util/date/</code></td></tr>
+        <tr><td>Money</td><td>❌ không có standard</td><td>✅ <code>Money</code> value object + <code>JpyFormatter</code></td><td><code>common/util/money/</code></td></tr>
+        <tr><td>I18n</td><td>Spring MessageSource</td><td>❌ dùng standard</td><td>N/A</td></tr>
+        <tr><td>Config</td><td>@ConfigurationProperties</td><td>❌ dùng standard</td><td><code>common/config/</code> (chỉ Spring @Configuration)</td></tr>
+        <tr><td>Pagination</td><td>Spring Data Pageable</td><td>❌ dùng standard</td><td>N/A</td></tr>
+        <tr><td>Transaction</td><td>@Transactional</td><td>❌ dùng standard</td><td>N/A</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Anti-patterns cần tránh:</h4>
+    <div class="comparison-grid">
+      <div class="asis-box">
+        <h5>❌ Legacy pattern As-Is</h5>
+        <pre style="margin:0;"><code>// Giant static util class
+class CommonUtil {
+  static String formatDate(...) {...}
+  static int calcPremium(...) {...}  ← business!
+  static Connection getDbConn() {...}
+  static void writeLog(...) {...}
+  // ... 50 more methods
+}</code></pre>
+      </div>
+      <div class="comparison-arrow">→</div>
+      <div class="tobe-box">
+        <h5>✅ Split by concern</h5>
+        <pre style="margin:0;"><code>// Pure utility (if any)
+class JapaneseEraConverter {...}
+
+// DI'd component
+@Component
+class JpyFormatter {...}
+
+// Business belongs to domain
+contract/domain/PremiumCalculator
+
+// Spring handles infra
+spring.datasource.*
+@Transactional</code></pre>
+      </div>
+    </div>
+
+    <h4>Common placement rules:</h4>
+    <ol style="padding-left:1.5rem; margin:0.5rem 0;">
+      <li><strong>Zero business logic trong <code>common/</code></strong>. Business rules → feature package's <code>domain/</code>.</li>
+      <li><strong>Prefer composition over inheritance</strong>. Không tạo <code>BaseController extends AbstractAction</code>. Dùng <code>@ControllerAdvice</code>, interceptor, aspect.</li>
+      <li><strong>Custom common = ≥ 2 features dùng + ≥ 2 methods</strong>. Nếu chỉ 1 method hoặc 1 feature → không common.</li>
+      <li><strong>Document common contract</strong>: mỗi class common có JavaDoc nêu "Khi nào dùng? Khi nào KHÔNG dùng?"</li>
+    </ol>
+
+    <div class="next-value">
+      Decision về common/shared là <strong>đầu vào cho Phase 4 detail design</strong> — mỗi GAP touching cross-cutting concern biết sẽ đặt code vào common hay feature package.
+    </div>
+  </div>
+
+  <!-- 3.4 Cross-cutting -->
+  <div class="substep manual">
+    <div class="substep-header">
+      <span class="substep-id">3.4 — Cross-cutting Concerns</span>
+      <span><span class="tag tag-manual">MANUAL</span></span>
+    </div>
+    <p>Design cách handle cross-cutting (dùng Spring facilities):</p>
+
+    <h4>Session → JWT (SEEDS Multi-AZ mandate):</h4>
+    <div class="comparison-grid">
+      <div class="asis-box">
+        <h5>As-Is (Interstage session)</h5>
+        <pre style="margin:0;"><code>HttpSession sess = req.getSession();
+sess.setAttribute("userId", "U001");
+sess.setAttribute("role", "ADMIN");
+// Stored on Interstage AP server
+// Dies on failover</code></pre>
+      </div>
+      <div class="comparison-arrow">→</div>
+      <div class="tobe-box">
+        <h5>To-Be (JWT, stateless)</h5>
+        <pre style="margin:0;"><code>// JWT contains userId + role claims
+@AuthenticationPrincipal UserContext ctx;
+ctx.getUserId();
+ctx.hasRole("ADMIN");
+// Multi-AZ safe, no server state
+// Token in Authorization header</code></pre>
+      </div>
+    </div>
+
+    <h4>Transaction (XA → @Transactional):</h4>
+    <div class="comparison-grid">
+      <div class="asis-box">
+        <h5>As-Is (Interstage XA)</h5>
+        <pre style="margin:0;"><code>UserTransaction tx =
+  (UserTransaction) ic.lookup("java:comp/UserTransaction");
+tx.begin();
+try {
+  // DB ops
+  tx.commit();
+} catch (Exception e) {
+  tx.rollback();
+}</code></pre>
+      </div>
+      <div class="comparison-arrow">→</div>
+      <div class="tobe-box">
+        <h5>To-Be (@Transactional)</h5>
+        <pre style="margin:0;"><code>@Service
+public class ContractService {
+  @Transactional
+  public void register(ContractRequest req) {
+    // DB ops: auto commit/rollback
+  }
+}
+// For distributed TX across services:
+// Outbox pattern + SQS, không XA</code></pre>
+      </div>
+    </div>
+
+    <h4>Logging & audit:</h4>
+    <div class="comparison-grid">
+      <div class="asis-box">
+        <h5>As-Is</h5>
+        <pre style="margin:0;"><code>LogUtil.log("TRACE", "ApplyAction",
+  "execute() start uid=" + userId);
+LogUtil.logAudit(userId, "APPLY",
+  contractId);</code></pre>
+      </div>
+      <div class="comparison-arrow">→</div>
+      <div class="tobe-box">
+        <h5>To-Be (SLF4J + aspect)</h5>
+        <pre style="margin:0;"><code>// Business log
+private static final Logger log =
+  LoggerFactory.getLogger(ContractService.class);
+log.info("register start uid={}", userId);
+
+// Audit via @AuditLog aspect
+@AuditLog(action = "APPLY")
+public void register(...) {...}</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3.5 Data model -->
+  <div class="substep manual">
+    <div class="substep-header">
+      <span class="substep-id">3.5 — Data Model (JPA Entity + Repository)</span>
+      <span><span class="tag tag-manual">MANUAL</span></span>
+    </div>
+    <p>Chuyển từ <strong>DAO + manual JDBC</strong> → <strong>JPA Entity + Spring Data Repository</strong>. Decide:</p>
+    <ul style="padding-left:1.5rem;">
+      <li><strong>Entity per table</strong>: 1-1 mapping, @Entity + @Column</li>
+      <li><strong>Relationship</strong>: @ManyToOne lazy by default, @OneToMany fetch lazy</li>
+      <li><strong>Repository</strong>: extend <code>JpaRepository</code>, custom queries via <code>@Query</code> hoặc method naming</li>
+      <li><strong>Native SQL cũ</strong>: giữ nếu complex (reporting), convert sang <code>@Query(nativeQuery=true)</code></li>
+      <li><strong>Pro*C → Spring Batch</strong>: cursor-based batch processing dùng <code>ItemReader</code> + <code>ItemWriter</code></li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============== PHASE 3.5 COMMON DEEP DIVE ============== -->
+<h2 id="p3-common">Phase 3.5 — Common/Shared Deep Dive (Case Study SEEDS)</h2>
+
+<div class="highlight-section">
+  <h3>🎯 Câu hỏi: "Common đặt ở đâu?" — Decision Tree</h3>
+  <div class="mermaid-wrap">
+<pre class="mermaid">
+flowchart TD
+    START[Phát hiện code dùng chung hoặc duplicate]:::start
+    Q1{Dùng bởi<br/>2+ feature?}
+    Q2{Chứa business<br/>logic/rule?}
+    Q3{Integrate với<br/>external system?}
+    Q4{Spring đã có<br/>standard chưa?}
+
+    L1[❌ Để trong feature đó<br/>vd: contract/util/]:::leaf
+    L2[💎 Feature's domain layer<br/>vd: contract/domain/PremiumCalculator]:::leaf
+    L3[🔌 infrastructure/<br/>vd: infrastructure/ftp/]:::leaf
+    L4[✅ Dùng Spring standard<br/>vd: @Valid, @Transactional]:::leaf
+    L5[⭐ common/ subpackage<br/>vd: common/validation/]:::leaf
+
+    START --> Q1
+    Q1 -->|No| L1
+    Q1 -->|Yes| Q2
+    Q2 -->|Yes| L2
+    Q2 -->|No| Q3
+    Q3 -->|Yes| L3
+    Q3 -->|No| Q4
+    Q4 -->|Yes| L4
+    Q4 -->|No| L5
+
+    classDef start fill:#312e81,stroke:#a78bfa,color:#fff
+    classDef leaf fill:#064e3b,stroke:#10b981,color:#fff
+</pre>
+  </div>
+
+  <h3>Case Study: 10 common pattern từ SEEDS SAMPLE-06 A4</h3>
+  <table>
+    <thead>
+      <tr><th>DP ID</th><th>Legacy common</th><th>To-Be placement</th><th>Lý do</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>DP-01</td>
+        <td>入力チェック (必須/桁数) — <code>CommonValidator.check()</code> @12 sites</td>
+        <td><strong>Spring @Valid + Jakarta Validation</strong> (standard)</td>
+        <td>Spring có sẵn, không build lại</td>
+      </tr>
+      <tr>
+        <td>DP-02</td>
+        <td>日付文字列変換 — <code>DateUtil.format()</code> @9 sites</td>
+        <td><code>common/util/date/</code> (JapaneseEra, FiscalYear)</td>
+        <td>Business-specific (元号, 年度) → custom common</td>
+      </tr>
+      <tr>
+        <td>DP-03</td>
+        <td>DB接続取得 — <code>DBUtil.getConn()</code> @22 sites</td>
+        <td><strong>Spring DataSource auto-config</strong></td>
+        <td>Framework handle, DELETE legacy util</td>
+      </tr>
+      <tr>
+        <td>DP-04</td>
+        <td>金額丸め — <code>PaymentService.round()</code> @5 sites</td>
+        <td><code>common/util/money/</code> (<code>Money</code> value object)</td>
+        <td>Business rule (丸めルール specific) → common util với clear contract</td>
+      </tr>
+      <tr>
+        <td>DP-05</td>
+        <td>CSV出力 — <code>ReportService.writeCsv()</code> @7 sites</td>
+        <td><code>infrastructure/export/CsvExporter</code></td>
+        <td>I/O concern → infra, not common util</td>
+      </tr>
+      <tr>
+        <td>DP-06</td>
+        <td>ログ出力書式 @60 sites</td>
+        <td><strong>SLF4J pattern + Logback encoder</strong></td>
+        <td>Standard framework handle</td>
+      </tr>
+      <tr>
+        <td>DP-07</td>
+        <td>セッション属性取得 @18 sites</td>
+        <td><code>common/security/UserContext</code> (JWT-backed)</td>
+        <td>Multi-AZ mandate → stateless JWT, custom context</td>
+      </tr>
+      <tr>
+        <td>DP-08</td>
+        <td>コード値変換 — <code>CodeUtil.lookup()</code> @6 sites</td>
+        <td><code>common/cache/CodeMasterCache</code> hoặc feature-level cache</td>
+        <td>If 2+ features → common with Spring Cache abstraction</td>
+      </tr>
+      <tr>
+        <td>DP-09</td>
+        <td>ページング — <code>Dao.findPage()</code> @8 sites</td>
+        <td><strong>Spring Data Pageable</strong></td>
+        <td>Standard pagination, delete custom</td>
+      </tr>
+      <tr>
+        <td>DP-10</td>
+        <td>エラーメッセージ生成 @15 sites</td>
+        <td><strong>Spring MessageSource + @ControllerAdvice</strong></td>
+        <td>Standard i18n + exception handler</td>
+      </tr>
+      <tr>
+        <td>DP-12</td>
+        <td>排他制御 (更新日時比較) — <code>Dao.update()</code> @11 sites</td>
+        <td>JPA <code>@Version</code> optimistic locking (standard)</td>
+        <td>Framework pattern, không custom</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Kết quả: 11 legacy common patterns → chỉ 4 "custom common"</h3>
+  <p>Phần còn lại (7 patterns) được <strong>loại bỏ</strong> hoặc <strong>thay bằng Spring standard</strong>. Codebase mới gọn hơn, dễ maintain, dễ onboard dev mới.</p>
+</div>
+
+<!-- ============== PHASE 4: DETAIL DESIGN ============== -->
+<h2 id="p4">Phase 4 — Detail Design (per-module)</h2>
+
+<div class="phase detail">
+  <div class="phase-header">
+    <div class="phase-num">4</div>
+    <div>
+      <div class="phase-title">Detail design per GAP + per module</div>
+      <div class="phase-sub">Áp dụng blueprint Phase 3 vào từng cụ thể. Skill auto-gen skeleton, human fill decision.</div>
+    </div>
+  </div>
+
+  <!-- 4.1 -->
+  <div class="substep">
+    <div class="substep-header">
+      <span class="substep-id">4.1 — Per-GAP Detail Analysis</span>
+      <span><span class="tag tag-auto">AUTO skeleton</span><span class="tag tag-manual">MANUAL decision</span></span>
+    </div>
+    <p>Skill tạo <code>GAP_APP-xxx.xlsx</code> cho mỗi GAP S/A. 7 sheets (A1-A5, B1, B2). Human fill A4 対応方針 (reference blueprint Phase 3), A5 設計影響, B1 検出方法.</p>
+    <p><strong>Enhanced với Phase 3 output</strong>: cột <code>対応方針</code> giờ reference tên package/class mới (vd "Chuyển sang <code>common/security/UserContext</code>") thay vì chỉ "custom replacement".</p>
+  </div>
+
+  <!-- 4.2 -->
+  <div class="substep manual">
+    <div class="substep-header">
+      <span class="substep-id">4.2 — Per-Module Design Doc</span>
+      <span><span class="tag tag-manual">MANUAL</span><span class="tag tag-core">CORE</span></span>
+    </div>
+    <p>Consolidate ~10-30 related GAPs thành 1 <strong>design doc per module</strong>. Theo cấu trúc <code>04_To-Be設計temp/設計書/*/</code>:</p>
+    <table>
+      <thead><tr><th>Design doc</th><th>Nội dung</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><code>アプリケーション/基本方針-001</code></td><td>Overall migration policy, layering, package rules</td><td>Phase 3.1 + 3.2 blueprint</td></tr>
+        <tr><td><code>アプリケーション/JDK21-002</code></td><td>JDK 21 adoption details, feature usage policy</td><td>Record, pattern matching, sealed classes</td></tr>
+        <tr><td><code>アプリケーション/SpringBoot適用-003</code></td><td>Spring Boot 3 adoption, DI principles</td><td>Starter choice, bean config strategy</td></tr>
+        <tr><td><code>共通方式/文字コード-001</code></td><td>Encoding strategy (UTF-8 everywhere)</td><td>File I/O, DB column, HTTP charset</td></tr>
+        <tr><td><code>共通方式/ログ・監視</code></td><td>Logging + audit log design</td><td>SLF4J config, CloudWatch integration</td></tr>
+        <tr><td><code>連携インタフェース/Claret-REST</code></td><td>Claret IF → REST migration</td><td>Adapter pattern, request/response schema</td></tr>
+        <tr><td><code>データベース/受注テーブル-001</code></td><td>JPA entity design cho 受注 table</td><td>Entity + Repository + migration script</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 4.3 -->
+  <div class="substep manual">
+    <div class="substep-header">
+      <span class="substep-id">4.3 — Business Rules Documentation</span>
+      <span><span class="tag tag-manual">MANUAL</span><span class="tag tag-core">CORE</span></span>
+    </div>
+    <p>Rules extract từ Phase 2.2 → formal spec document. Mỗi rule có:</p>
+    <ul style="padding-left:1.5rem;">
+      <li><strong>Rule ID</strong>: BR-001..BR-xxx</li>
+      <li><strong>Statement</strong>: "若65歳以上 → 保険料×1.5" (plain language)</li>
+      <li><strong>As-Is location</strong>: file:line trong legacy</li>
+      <li><strong>To-Be location</strong>: class.method mới (vd <code>PremiumCalculator.applyAgeDiscount()</code>)</li>
+      <li><strong>Test case</strong>: unit test cases cho preservation</li>
+    </ul>
+    <div class="next-value">
+      Phase 5 testing dùng rule list để verify behavior preserved. <strong>Golden master test</strong> replay old inputs → compare old vs new output.
+    </div>
+  </div>
+</div>
+
+<!-- ============== PHASE 5 BUILD ============== -->
+<h2 id="p5">Phase 5 — Build & Test (reference, out of scope here)</h2>
+
+<div class="phase build">
+  <div class="phase-header">
+    <div class="phase-num">5</div>
+    <div>
+      <div class="phase-title">PoC → Pattern lib → Full build → Test → Release</div>
+      <div class="phase-sub">
+        <span class="tag tag-manual">MANUAL coding</span>
+        Áp dụng design từ Phase 3+4 vào code
+      </div>
+    </div>
+  </div>
+
+  <ol style="padding-left: 1.5rem; margin: 0.5rem 0;">
+    <li><strong>5.1 PoC</strong>: implement 1 feature "最優先" (từ SAMPLE-07 priority) end-to-end theo Phase 3 blueprint. Validate design decisions.</li>
+    <li><strong>5.2 Pattern library</strong>: codify PoC-proven patterns thành <strong>code templates/snippets</strong> cho dev team. Vd: "Standard REST controller template", "Standard Repository template".</li>
+    <li><strong>5.3 Full migration</strong>: scale ra toàn system theo pattern library.
+      <ul>
+        <li>Chia theo feature package (từ 3.2) — mỗi dev team own 1-2 feature</li>
+        <li>Common/infrastructure code implement trước, feature code sau</li>
+      </ul>
+    </li>
+    <li><strong>5.4 Testing strategy</strong>:
+      <ul>
+        <li><strong>Unit test</strong>: cover domain layer (business logic)</li>
+        <li><strong>Integration test</strong>: cover controller → service → repository</li>
+        <li><strong>Golden master test</strong>: replay old inputs → verify same output (business rule preservation)</li>
+        <li><strong>UAT scenarios</strong>: từ SAMPLE-07 A3 業務フロー</li>
+        <li><strong>Load/performance test</strong>: Multi-AZ failover verification</li>
+      </ul>
+    </li>
+    <li><strong>5.5 Release</strong>: phased rollout theo リスク優先度 (最優先 → 優先 → 通常).</li>
+  </ol>
+</div>
+
+<!-- ============== AS-IS → TO-BE ============== -->
+<h2 id="asis-tobe">📐 As-Is ↔ To-Be class/package mapping (examples)</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Legacy class/pattern</th>
+      <th>Target class/package</th>
+      <th>Change type</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>com.sample.order.ApplyAction extends BaseAction</code></td>
+      <td><code>com.seeds.insurance.contract.application.ContractController</code> (@RestController)</td>
+      <td>Full redesign: servlet → REST controller</td>
+    </tr>
+    <tr>
+      <td><code>com.sample.order.ApplyBean implements Serializable</code></td>
+      <td><code>com.seeds.insurance.contract.dto.ContractRequest</code> (record) + <code>...ContractResponse</code></td>
+      <td>Split role: input DTO vs output DTO (record JDK 21)</td>
+    </tr>
+    <tr>
+      <td><code>com.sample.order.ApplyDao</code> (manual JDBC)</td>
+      <td><code>com.seeds.insurance.contract.infrastructure.ContractRepository extends JpaRepository</code></td>
+      <td>Framework swap: JDBC → JPA</td>
+    </tr>
+    <tr>
+      <td><code>com.sample.common.CommonUtil (static methods)</code></td>
+      <td>Split theo concern:<br/>• <code>common/util/date/</code><br/>• <code>common/util/money/</code><br/>• DELETE phần duplicate với Spring</td>
+      <td>Decompose god class</td>
+    </tr>
+    <tr>
+      <td><code>com.sample.common.SessionBean</code> (Interstage session)</td>
+      <td><code>common/security/UserContext</code> (JWT-backed, @AuthenticationPrincipal)</td>
+      <td>Stateful → stateless (Multi-AZ)</td>
+    </tr>
+    <tr>
+      <td><code>com.sample.common.DBUtil.getConnection()</code></td>
+      <td>DELETE — Spring auto-config DataSource</td>
+      <td>Replaced by framework</td>
+    </tr>
+    <tr>
+      <td><code>com.sample.common.LogUtil</code></td>
+      <td>DELETE utility class → use SLF4J <code>LoggerFactory.getLogger(class)</code>; audit via <code>common/logging/AuditAspect</code></td>
+      <td>Mixed: standard + custom audit aspect</td>
+    </tr>
+    <tr>
+      <td><code>com.sample.order.PaymentService.round()</code> (business)</td>
+      <td><code>contract/domain/PremiumCalculator</code> — vì logic business, không common</td>
+      <td>Promote: util → domain service</td>
+    </tr>
+    <tr>
+      <td>Pro*C <code>batch_seikyu.pc</code></td>
+      <td><code>payment/batch/BillingBatchJob</code> (Spring Batch Job + Step)</td>
+      <td>Full rewrite: C → Java + Spring Batch</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============== SUMMARY ============== -->
+<h2 id="summary">📊 Bảng tóm tắt all phases</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Phase</th>
+      <th>Focus</th>
+      <th>Automation</th>
+      <th>Output</th>
+      <th>Duration (300 class)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>Discovery</td>
+      <td>Hiểu code + nghiệp vụ + dep</td>
+      <td>50% auto (inventory, deps) + 50% manual (business map)</td>
+      <td>INV-01, SAMPLE-06/07, TPL-22</td>
+      <td>1-2 tuần</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>Analysis</td>
+      <td>Gap cú pháp + nghiệp vụ</td>
+      <td>70% auto (TPL-23/F, GAP) + 30% manual (semantic)</td>
+      <td>TPL-23/F, APP-GAP/FW-GAP, class responsibility doc</td>
+      <td>1-2 tuần</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>Architecture 🔥</td>
+      <td>Thiết kế hệ thống mới</td>
+      <td>100% manual (AI-assisted)</td>
+      <td>Blueprint docs, package struct, common strategy, cross-cutting design</td>
+      <td>2-3 tuần</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>Detail Design</td>
+      <td>Per-GAP + per-module</td>
+      <td>60% auto skeleton + 40% manual decision</td>
+      <td>GAP_APP-*.xlsx × N, 設計書 × ~10, business rules spec</td>
+      <td>3-6 tuần</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>Build &amp; Test</td>
+      <td>Implement + verify</td>
+      <td>100% manual (coding)</td>
+      <td>Running system, test suite, UAT pass</td>
+      <td>3-6 tháng</td>
+    </tr>
+  </tbody>
+</table>
+
+<p style="margin-top:1rem; padding-left:1.5rem; color: var(--text-dim);">
+  <strong>Assessment phase (1-4) tổng ~2-3 tháng</strong>. Phase 3 (Architecture) là bottleneck chính — không auto được, cần domain expert + architect.
+</p>
+
+<!-- ============== PATHS ============== -->
+<h2 id="paths">📂 Reference paths</h2>
+
+<h3>Template & output paths (project SEEDS):</h3>
+<pre><code>D:\prjo_isd_solaris\10_common\13_template\01.Assessment\
+├── 01_インプットの棚卸\                                     ← Phase 1.1
+│   └── 01_テンプレート\TPL-INV-01_資産棚卸表.xlsx
+├── 02_現状調査\                                             ← Phase 1 + 2
+│   └── 01_テンプレート\
+│       ├── TPL-02_調査報告書.xlsx                          ← Phase 2 report format
+│       ├── TPL-06_依存関係一覧.xlsx                        ← Phase 1.4
+│       ├── TPL-07_業務機能一覧.xlsx                        ← Phase 1.2 + 1.3
+│       ├── TPL-22_リリースノート確認表.xlsx                ← Phase 1.5
+│       └── TPL-23_非互換観点一覧.xlsx                      ← Phase 2.1
+├── 03_GAP分析temp\APP\                                      ← Phase 2.3 + 4.1
+│   ├── 【Luvina】APP-GAP一覧.xlsx                          ← Index JDK
+│   ├── 【Luvina】APP-FW-GAP一覧.xlsx                       ← Index framework
+│   ├── GAP_APP-JAVA-001.xlsx                               ← Detail template
+│   └── GAP_APP-FW-001.xlsx
+└── 04_To-Be設計temp\設計書\                                 ← Phase 3 + 4.2
+    ├── アプリケーション\      ← App-level design
+    ├── データ, データベース\  ← Data model design
+    ├── バッチ・ジョブ\        ← Batch design
+    ├── 共通方式\              ← ⭐ Common/shared design (Phase 3.3)
+    ├── 基盤・非機能\          ← Infra + NFR design
+    ├── 画面\                  ← UI design
+    └── 連携インタフェース\    ← External IF design</code></pre>
+
+<h3>6 skills có thể dùng ở Phase 1-2 + 4.1:</h3>
+<pre><code>C:\Users\thanhtq00103\.claude\skills\
+├── create-java-proc-inventory\       ← Phase 1.1
+├── create-java-release-notes-check\  ← Phase 1.5
+├── create-jdk-nonc-viewpoints\       ← Phase 2.1 (JDK)
+├── create-framework-viewpoints\      ← Phase 2.1 (framework)
+├── create-jdk-gap-analysis\          ← Phase 2.3 + 4.1 (JDK)
+└── create-framework-gap-analysis\    ← Phase 2.3 + 4.1 (framework)
+
+Each: scripts/*.py (Python full) + scripts/*.ps1 (PowerShell, no-Python env)</code></pre>
+
+<div class="footer">
+  Full migration flow document — generated 2026-10-10 · SEEDS (JDK 1.4+Interstage → JDK 21+Spring Boot 3)<br/>
+  Phase 3 (Architecture) là <strong>CORE của full framework migration</strong> — không có trong pure syntactic upgrade.<br/>
+  Open HTML trong browser (Chrome/Edge) để xem đầy đủ với Mermaid diagrams.
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: { curve: 'basis', htmlLabels: true }
+  });
+</script>
+
+</body>
+</html>
